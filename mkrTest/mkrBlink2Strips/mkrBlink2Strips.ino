@@ -7,10 +7,10 @@
 #include <WiFi101.h>
 #include <Adafruit_NeoPixel.h>
 
-#define PIN_A 7
-#define PIN_B 8
+#define PIN_A 6
+#define PIN_B 7
 #define STRIPNUM 2  //number of led strips - has to match number of pins
-#define STRIP_A 0   //each strip has to have a unique id starting from zero
+#define STRIP_A 0   //each strip has to have a unique id starting from 0
 #define STRIP_B 1
 #define PORT 5555
 #define NO_MORE_ACTIVE_LEDS -1
@@ -33,6 +33,7 @@ uint32_t colors[STRIPNUM][LEDNUM]={0}; // for each strip there is a uint32_t var
 int activeLeds;                       // blink flag (8bits) + r (8bits) + g (8bits) + b(8bits)
 
 //functions declarations:
+void initLeds();
 void switchOffAllLed(uint8_t stripNr);
 void saveNewData(WiFiClient* client, uint8_t stripNr);
 int getNextActiveLed(WiFiClient* client);
@@ -43,13 +44,14 @@ uint8_t red(uint32_t color);
 uint8_t green(uint32_t color);
 uint8_t blue(uint32_t color);
 uint8_t blinkFlag(uint32_t color);
+uint8_t pinNr(uint8_t stripNr);
 
 void setup() {
-  strip.begin();
-  strip.show();
   Serial.begin(9600);      // initialize serial communication
   Serial.print("Start Serial ");
   pinMode(ledpin, OUTPUT);      // set the LED pin mode
+  initLeds();
+ 
   // Check for the presence of the shield
   Serial.print("WiFi101 shield: ");
   if (WiFi.status() == WL_NO_SHIELD) {
@@ -62,7 +64,6 @@ void setup() {
     digitalWrite(ledpin, LOW);
     Serial.print("Attempting to connect to Network named: ");
     Serial.println(ssid);                   // print the network name (SSID);
-    digitalWrite(ledpin, HIGH);
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     status = WiFi.begin(ssid, pass);
     // wait 10 seconds for connection:
@@ -70,7 +71,21 @@ void setup() {
   }
   server.begin();                           // start the web server
   printWifiStatus();                        // you're connected now, so print out the status
-  digitalWrite(ledpin, HIGH);
+}
+
+void initLeds(){
+  strip.begin();
+  strip.show();
+}
+
+uint8_t pinNr(uint8_t stripNr){
+  switch(stripNr){
+    case STRIP_A:
+      return PIN_A;
+    case STRIP_B:
+      return PIN_B;
+  }
+  return 0;
 }
 void loop() {
   WiFiClient client = server.available();   // listen for incoming clients
@@ -89,12 +104,13 @@ void loop() {
             Serial.println(pinNr);
         }
         else{
+          uint8_t stripNr = STRIP_A;
+          strip.setPin(PIN_A);
           if(pinNr == PIN_A)
             strip.setPin(PIN_A);
-          else
-            strip.setPin(PIN_B);
-
-          uint8_t stripNr = STRIP_A;
+          else{
+            strip.setPin(PIN_B); stripNr=STRIP_B;}
+        
           activeLeds = client.parseInt();//number of LEDs whose color will change
           Serial.print(activeLeds);
           Serial.println(" is the nr of LEDs which will change color\n");
@@ -113,18 +129,23 @@ void loop() {
   }
   
   setLights(STRIP_A, ON);
-  delay(200);
+  setLights(STRIP_B, ON);
+  delay(1000);
   setLights(STRIP_A, OFF);
-  delay(200);
+  setLights(STRIP_B, OFF);
+  delay(1000);
 }
 
 void setLights(uint8_t stripNr, uint8_t on){
-   for (uint16_t i=0; i<LEDNUM; i++){
+  strip.clear();
+  strip.setPin(pinNr(stripNr));
+  
+  for (uint16_t i=0; i<LEDNUM; i++){
     uint32_t color = colors[stripNr][i];
-    if(on)
-      strip.setPixelColor(i, red(color), green(color), blue(color));
-    else if(blinkFlag(color) == ON)
+    if(!on && blinkFlag(color)== ON)
       strip.setPixelColor(i, 0, 0, 0);
+    else
+      strip.setPixelColor(i, red(color), green(color), blue(color)); 
    }
    strip.show();
 }
@@ -140,7 +161,7 @@ void switchOffAllLed(uint8_t stripNr){
 void saveNewData(WiFiClient* client, uint8_t stripNr){
   int activeLedIndex=getNextActiveLed(client);
   for(uint16_t LED=0; LED<LEDNUM; LED++){
-    if(LED==activeLedIndex){
+    if(LED == activeLedIndex){
       saveLedColor(LED, client, stripNr);
       activeLedIndex=getNextActiveLed(client);      
     }
@@ -151,10 +172,10 @@ void saveNewData(WiFiClient* client, uint8_t stripNr){
 }
 
 int getNextActiveLed(WiFiClient* client){
-  int nextLedactive=NO_MORE_ACTIVE_LEDS;  
+  int nextLedactive = NO_MORE_ACTIVE_LEDS;  
   if(activeLeds>0){
     activeLeds--; 
-    nextLedactive= client->parseInt()-1;
+    nextLedactive= client->parseInt() - 1;
   }
   return nextLedactive;  
 }
@@ -166,7 +187,7 @@ void saveLedColor(uint8_t ledId, WiFiClient* client,uint8_t stripNr){
   uint8_t g=client->parseInt();
   uint8_t b=client->parseInt();
   colors[stripNr][ledId] = ((uint32_t)blinkFlag << 24) | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-
+  Serial.print("SaveLedColor: StripNr, pinNr: "); Serial.print(stripNr); Serial.print(", "); Serial.println(pinNr(stripNr));
   Serial.print("(");   Serial.print(r);   Serial.print(", ");    Serial.print(g);   Serial.print(",");  Serial.print(b);  Serial.print(")   ");
   Serial.print("(");   Serial.print(r, HEX);   Serial.print(", ");    Serial.print(g, HEX);   Serial.print(",");  Serial.print(b,HEX);  Serial.print(")   ");
   Serial.println(colors[stripNr][ledId], HEX);
